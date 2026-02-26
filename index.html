@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minkowski Spacetime Simulator</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background:#0f1220; color:#e8ecff; }
+    h1 { margin-top: 0; }
+    .layout { display:grid; grid-template-columns: 320px 1fr; gap:16px; }
+    .card { background:#1a1f36; border:1px solid #2b335a; border-radius:10px; padding:12px; margin-bottom:12px; }
+    label { display:block; margin:6px 0; font-size:14px; }
+    input, select, button { width:100%; margin-top:4px; padding:6px; border-radius:6px; border:1px solid #3d497d; background:#121730; color:#e8ecff; }
+    button { background:#2e4dff; border:none; cursor:pointer; font-weight:700; }
+    button:hover { background:#3f5dff; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    canvas { width:100%; height:600px; background:#0b0e1a; border:1px solid #2b335a; border-radius:10px; }
+    pre { background:#0b0e1a; padding:10px; border-radius:8px; white-space:pre-wrap; }
+    .small { opacity:0.8; font-size:13px; }
+  </style>
+</head>
+<body>
+  <h1>Minkowski Spacetime Simulator (1+1D)</h1>
+  <p class="small">Shows events, world lines, null lines, interval type, spontaneous points, and conditional interactions.</p>
+
+  <div class="layout">
+    <div>
+      <div class="card">
+        <h3>Add Event</h3>
+        <label>Label <input id="eventLabel" value="E" /></label>
+        <div class="row">
+          <label>t <input id="eventT" type="number" value="2" step="0.1" /></label>
+          <label>x <input id="eventX" type="number" value="1" step="0.1" /></label>
+        </div>
+        <button id="addEvent">Add Event</button>
+      </div>
+
+      <div class="card">
+        <h3>Add World Line</h3>
+        <label>Label <input id="lineLabel" value="object" /></label>
+        <div class="row">
+          <label>x0 <input id="lineX0" type="number" value="0" step="0.1" /></label>
+          <label>v (|v|≤c)</label>
+        </div>
+        <input id="lineV" type="number" value="0.4" step="0.1" />
+        <button id="addLine">Add World Line</button>
+      </div>
+
+      <div class="card">
+        <h3>Light vs Rest</h3>
+        <div class="row">
+          <label>light start t <input id="lt" type="number" value="0" step="0.1" /></label>
+          <label>light start x <input id="lx" type="number" value="0" step="0.1" /></label>
+        </div>
+        <div class="row">
+          <label>rest x <input id="rx" type="number" value="5" step="0.1" /></label>
+          <label>direction
+            <select id="ldir"><option value="1">+1</option><option value="-1">-1</option></select>
+          </label>
+        </div>
+        <button id="simulateLight">Simulate Light vs Rest</button>
+      </div>
+
+      <div class="card">
+        <h3>Interval Classifier</h3>
+        <div class="row">
+          <label>A(t,x)<input id="ea" value="0,0" /></label>
+          <label>B(t,x)<input id="eb" value="3,3" /></label>
+        </div>
+        <button id="classify">Classify</button>
+        <pre id="output">Ready.</pre>
+      </div>
+    </div>
+
+    <div>
+      <canvas id="plot" width="960" height="600"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const c = 1;
+    const tMin = -1, tMax = 10, xMin = -10, xMax = 10;
+    const canvas = document.getElementById('plot');
+    const ctx = canvas.getContext('2d');
+
+    const events = [{t:0,x:0,label:'Origin'}];
+    const lines = [{x0:0,v:0,label:'rest'},{x0:0,v:1,label:'light+'},{x0:0,v:-1,label:'light-'}];
+
+    function xToPx(x){ return (x-xMin)/(xMax-xMin)*canvas.width; }
+    function tToPy(t){ return canvas.height - (t-tMin)/(tMax-tMin)*canvas.height; }
+
+    function intervalType(a,b){
+      const dt=b.t-a.t, dx=b.x-a.x;
+      const s2=(c*dt)**2-dx**2;
+      if(Math.abs(s2)<1e-9) return 'null';
+      return s2>0 ? 'timelike':'spacelike';
+    }
+
+    function linePos(line,t){ return line.x0 + line.v*t; }
+
+    function intersection(lineA,lineB){
+      const denom = lineA.v-lineB.v;
+      if(Math.abs(denom)<1e-12) return null;
+      const t=(lineB.x0-lineA.x0)/denom;
+      return {t, x: linePos(lineA,t)};
+    }
+
+    function spontaneousEvents(line, p=0.15, dt=0.5){
+      const out=[];
+      for(let t=tMin;t<=tMax;t+=dt){
+        if(Math.random()<p) out.push({t,x:linePos(line,t),label:'spontaneous'});
+      }
+      return out;
+    }
+
+    function conditionalClose(lineA,lineB,threshold=0.4,dt=0.2){
+      const out=[];
+      for(let t=tMin;t<=tMax;t+=dt){
+        const xA=linePos(lineA,t), xB=linePos(lineB,t);
+        if(Math.abs(xA-xB)<threshold) out.push({t,x:(xA+xB)/2,label:'conditional'});
+      }
+      return out;
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle='#2f365f'; ctx.lineWidth=1;
+      for(let x=-10;x<=10;x+=1){ ctx.beginPath(); ctx.moveTo(xToPx(x),0); ctx.lineTo(xToPx(x),canvas.height); ctx.stroke(); }
+      for(let t=-1;t<=10;t+=1){ ctx.beginPath(); ctx.moveTo(0,tToPy(t)); ctx.lineTo(canvas.width,tToPy(t)); ctx.stroke(); }
+
+      // axes
+      ctx.strokeStyle='#96a0d7'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(xToPx(0),0); ctx.lineTo(xToPx(0),canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,tToPy(0)); ctx.lineTo(canvas.width,tToPy(0)); ctx.stroke();
+
+      // draw worldlines
+      lines.forEach(line=>{
+        ctx.strokeStyle = Math.abs(Math.abs(line.v)-1)<1e-9 ? '#ffd166' : '#7bdff2';
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.moveTo(xToPx(linePos(line,tMin)), tToPy(tMin));
+        ctx.lineTo(xToPx(linePos(line,tMax)), tToPy(tMax));
+        ctx.stroke();
+      });
+
+      // draw events
+      events.forEach(e=>{
+        ctx.fillStyle='#ff5c8a';
+        ctx.beginPath(); ctx.arc(xToPx(e.x), tToPy(e.t), 4, 0, 2*Math.PI); ctx.fill();
+        ctx.fillStyle='#d7ddff';
+        ctx.fillText(e.label, xToPx(e.x)+6, tToPy(e.t)-6);
+      });
+
+      ctx.fillStyle='#d7ddff';
+      ctx.fillText('x', canvas.width-10, tToPy(0)-8);
+      ctx.fillText('t', xToPx(0)+8, 12);
+    }
+
+    document.getElementById('addEvent').onclick=()=>{
+      events.push({
+        label:document.getElementById('eventLabel').value || 'E',
+        t:parseFloat(document.getElementById('eventT').value),
+        x:parseFloat(document.getElementById('eventX').value)
+      });
+      draw();
+    };
+
+    document.getElementById('addLine').onclick=()=>{
+      const v=parseFloat(document.getElementById('lineV').value);
+      if(Math.abs(v)>c){ alert('For relativity, use |v| <= c.'); return; }
+      lines.push({
+        label:document.getElementById('lineLabel').value || 'object',
+        x0:parseFloat(document.getElementById('lineX0').value),
+        v
+      });
+      // add spontaneity and conditional samples for this line against rest
+      events.push(...spontaneousEvents(lines[lines.length-1]));
+      events.push(...conditionalClose(lines[lines.length-1], {x0:0,v:0,label:'rest'}));
+      draw();
+    };
+
+    document.getElementById('simulateLight').onclick=()=>{
+      const light={x0:parseFloat(lx.value)-parseFloat(lt.value)*parseInt(ldir.value), v:parseInt(ldir.value), label:'photon'};
+      const rest={x0:parseFloat(rx.value), v:0, label:'rest-object'};
+      lines.push(light,rest);
+      const meet=intersection(light,rest);
+      if(meet && meet.t>=parseFloat(lt.value)){
+        events.push({t:meet.t,x:meet.x,label:'light-rest interaction'});
+        output.textContent=`Interaction at t=${meet.t.toFixed(2)}, x=${meet.x.toFixed(2)} (null line with rest worldline).`;
+      } else {
+        output.textContent='No forward-time interaction for this direction.';
+      }
+      draw();
+    };
+
+    document.getElementById('classify').onclick=()=>{
+      const [ta,xa]=ea.value.split(',').map(Number);
+      const [tb,xb]=eb.value.split(',').map(Number);
+      const type=intervalType({t:ta,x:xa},{t:tb,x:xb});
+      output.textContent = `Interval between A(${ta},${xa}) and B(${tb},${xb}) is ${type}.`;
+    };
+
+    draw();
+  </script>
+</body>
+</html>
